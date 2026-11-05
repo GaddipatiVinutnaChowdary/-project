@@ -74,6 +74,10 @@ Base = declarative_base()
 engine_options: dict[str, Any] = {"pool_pre_ping": True}
 if DATABASE_URL.startswith("sqlite"):
     engine_options["connect_args"] = {"check_same_thread": False, "timeout": 25}
+else:
+    # Keep each serverless instance's pool bounded; use the database provider's
+    # pooled endpoint to limit aggregate connections across scaled instances.
+    engine_options.update(pool_size=2, max_overflow=0, pool_timeout=10, pool_recycle=1800)
 engine = create_engine(DATABASE_URL, **engine_options)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
