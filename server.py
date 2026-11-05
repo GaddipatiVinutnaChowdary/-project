@@ -35,15 +35,31 @@ from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
-DATA.mkdir(exist_ok=True)
-APP_ENV = os.getenv("APP_ENV", "development").lower()
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(DATA / 'vignan-campus.sqlite3').as_posix()}")
-# Render Postgres and several hosted providers supply the default PostgreSQL
-# scheme. The project uses psycopg 3, so select its SQLAlchemy driver explicitly.
+STATIC = ROOT / "public"
+ON_VERCEL = os.getenv("VERCEL", "").lower() in {"1", "true"}
+APP_ENV = os.getenv("APP_ENV", "production" if ON_VERCEL else "development").lower()
+configured_database_url = os.getenv("DATABASE_URL", "").strip()
+if configured_database_url:
+    DATABASE_URL = configured_database_url
+elif ON_VERCEL:
+    # Import the app cleanly so its lifespan can return a clear production
+    # configuration error when no persistent database has been connected.
+    DATABASE_URL = "sqlite://"
+else:
+    DATA.mkdir(exist_ok=True)
+    DATABASE_URL = f"sqlite:///{(DATA / 'vignan-campus.sqlite3').as_posix()}"
+# Hosted providers commonly supply postgresql:// URLs. This application uses
+# psycopg 3, so select its SQLAlchemy driver explicitly.
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgres://"):]
 elif DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://"):]
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip()
+if not PUBLIC_BASE_URL and ON_VERCEL:
+    deployment_host = (os.getenv("VERCEL_PROJECT_PRODUCTION_URL")
+                       or os.getenv("VERCEL_URL", "")).strip()
+    if deployment_host:
+        PUBLIC_BASE_URL = deployment_host if deployment_host.startswith("https://") else f"https://{deployment_host}"
 SESSION_HOURS = max(1, min(24, int(os.getenv("SESSION_HOURS", "10"))))
 CONSENT_VERSION = os.getenv("CONSENT_VERSION", "v1.1")
 LOCATION_ACCURACY_LIMIT_M = max(30, min(500, int(os.getenv("LOCATION_ACCURACY_LIMIT_M", "120"))))
@@ -572,8 +588,8 @@ async def lifespan(_app: FastAPI):
     if APP_ENV == "production":
         if DATABASE_URL.startswith("sqlite"):
             raise RuntimeError("Production mode requires a persistent PostgreSQL DATABASE_URL.")
-        if not os.getenv("PUBLIC_BASE_URL", "").startswith("https://"):
-            raise RuntimeError("Production mode requires PUBLIC_BASE_URL set to the HTTPS campus URL.")
+        if not PUBLIC_BASE_URL.startswith("https://"):
+            raise RuntimeError("Production mode requires an HTTPS Vercel URL or PUBLIC_BASE_URL.")
     _setup_tables()
     with SessionLocal() as db:
         purge_expired_presence(db, force=True)
@@ -613,27 +629,27 @@ async def security_headers(request: Request, call_next):
 
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(ROOT / "index.html")
+    return FileResponse(STATIC / "index.html")
 
 
 @app.get("/student", include_in_schema=False)
 def student_portal():
-    return FileResponse(ROOT / "index.html")
+    return FileResponse(STATIC / "index.html")
 
 
 @app.get("/styles.css", include_in_schema=False)
 def styles():
-    return FileResponse(ROOT / "styles.css", media_type="text/css")
+    return FileResponse(STATIC / "styles.css", media_type="text/css")
 
 
 @app.get("/app.js", include_in_schema=False)
 def script():
-    return FileResponse(ROOT / "app.js", media_type="application/javascript")
+    return FileResponse(STATIC / "app.js", media_type="application/javascript")
 
 
 @app.get("/favicon.svg", include_in_schema=False)
 def favicon():
-    return FileResponse(ROOT / "favicon.svg", media_type="image/svg+xml")
+    return FileResponse(STATIC / "favicon.svg", media_type="image/svg+xml")
 
 
 @app.get("/api/health")
