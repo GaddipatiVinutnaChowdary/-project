@@ -38,6 +38,12 @@ DATA = ROOT / "data"
 DATA.mkdir(exist_ok=True)
 APP_ENV = os.getenv("APP_ENV", "development").lower()
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(DATA / 'vignan-campus.sqlite3').as_posix()}")
+# Render Postgres and several hosted providers supply the default PostgreSQL
+# scheme. The project uses psycopg 3, so select its SQLAlchemy driver explicitly.
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgres://"):]
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://"):]
 SESSION_HOURS = max(1, min(24, int(os.getenv("SESSION_HOURS", "10"))))
 CONSENT_VERSION = os.getenv("CONSENT_VERSION", "v1.1")
 LOCATION_ACCURACY_LIMIT_M = max(30, min(500, int(os.getenv("LOCATION_ACCURACY_LIMIT_M", "120"))))
