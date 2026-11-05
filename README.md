@@ -32,30 +32,29 @@ First-run setup offers synthetic example accounts and boundaries for exercising 
 
 The app includes a Docker/Compose deployment path, PostgreSQL support, readiness checks, and Alembic schema migrations. Copy `.env.example` to `.env`, replace every placeholder, and use URL-safe random secrets. Generate a one-time setup token with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Set the HTTPS `PUBLIC_BASE_URL`. `SETUP_BOOTSTRAP_TOKEN` is required while the production database has no administrator; the first setup screen asks for it. Remove that token after the first administrator is created. Production mode rejects SQLite and refuses to verify presence against a demo boundary.
 
-### Vercel deployment
+### Railway deployment (Docker + PostgreSQL)
 
-The repository is configured for Vercel's FastAPI runtime. The `server.py` file exports the FastAPI app, and browser files are in `public/` so Vercel can serve them from its CDN. Import this GitHub repository into Vercel and deploy the `main` branch; no custom build command or output directory is needed. Vercel deploys every new commit to `main` automatically.
+The repository's root `Dockerfile` builds the same FastAPI app used locally. Connect the GitHub repository to Railway, create a Railway project, then create an app service from `GaddipatiVinutnaChowdary/-project` on the `main` branch. Railway detects the Dockerfile, runs the included Alembic migrations at container start, and binds Uvicorn to Railway's assigned `PORT`.
 
-Connect a persistent PostgreSQL database before opening the deployed app. In the Vercel Marketplace, connect a PostgreSQL provider such as Neon, then add its pooled PostgreSQL connection string as `DATABASE_URL` for the Production environment. The app accepts the usual `postgresql://` URL and selects psycopg 3. Vercel's `VERCEL_PROJECT_PRODUCTION_URL` / `VERCEL_URL` supplies the HTTPS host automatically; set `PUBLIC_BASE_URL` only if the host cannot be detected or you want an explicit custom domain.
-
-Add these Production environment variables in Vercel Project Settings:
+Add a Railway PostgreSQL database service, then set these variables on the app service:
 
 - `APP_ENV=production`
-- `DATABASE_URL` with the provider's PostgreSQL connection string
-- `SETUP_BOOTSTRAP_TOKEN` with a one-time random value (generate one with `python -c "import secrets; print(secrets.token_urlsafe(48))"`)
-- `GOOGLE_MAPS_API_KEY` with your Google Maps JavaScript API key (optional; the map falls back to OpenStreetMap until it is set)
+- `DATABASE_URL=${{Postgres.DATABASE_URL}}` (use the actual PostgreSQL service name if it is not `Postgres`)
+- `PUBLIC_BASE_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}`
+- `SETUP_BOOTSTRAP_TOKEN` to a one-time random value
+- `GOOGLE_MAPS_API_KEY` to the Maps JavaScript API key (optional; OpenStreetMap is used when unset)
 
-Redeploy after adding environment variables. Open `/` to create the first administrator and enter the one-time setup token. Sample records are disabled automatically in production. After the first administrator has been created, remove `SETUP_BOOTSTRAP_TOKEN` from Vercel and redeploy. The student sign-in is at `/student`; campus staff sign in at `/`.
+Generate a public Railway domain and set the service health check path to `/api/health/ready`. Once the first deployment is healthy, open `/` and create the first administrator using the one-time setup token. Remove `SETUP_BOOTSTRAP_TOKEN` after setup and redeploy. Student sign-in is at `/student`; campus staff sign in at `/`.
 
-Restrict the Google key in Google Cloud to the Maps JavaScript API and the exact Vercel production hostname (for example, `https://<project>.vercel.app/*`) plus any approved custom domain. Never commit the key to the repository. Location tracking requires HTTPS, GPS permission, and the student app to stay open and visible.
+The PostgreSQL service is persistent; the app container filesystem is not used for records. A fresh production database does not contain local SQLite or sample records. Production disables synthetic sample data and refuses presence verification against a demo boundary. Add approved student accounts and institution-surveyed campus boundaries through the admin interface before relying on attendance records. Restrict the Google key to the Maps JavaScript API and the exact Railway hostname (for example, `https://<service>.up.railway.app/*`) plus any approved custom domain. Never commit the key. Location tracking requires HTTPS, GPS permission, and the student app to stay open and visible.
 
-Vercel Functions have an ephemeral, read-only filesystem apart from temporary scratch space, so this deployment requires PostgreSQL; SQLite is only for local development. The app creates its current tables on startup. The included Alembic migrations remain available for managed schema upgrades. For production operations, use the database provider's pooled endpoint and back up PostgreSQL through that provider.
+The included Alembic migrations support managed schema upgrades. Back up PostgreSQL and test restores through the institution's normal operations process.
 
 Start the stack with `docker compose up --build -d`. Put an institution-managed HTTPS reverse proxy in front of the app and keep the database private. The Compose file binds the app to localhost for that purpose. Back up PostgreSQL and test restores through the university’s normal operations process. Apply schema changes with the included Alembic migrations.
 
 The app is not connected to Vignan’s live identity or student directory. A real deployment still requires the university to supply and approve a surveyed campus boundary and zones, the student account lifecycle or identity integration, the retention and student notice policy, the production HTTPS hostname, and database operations ownership. The default map is centered at the university-published administrative-block location (16.232529, 80.547941); this is a map center, not a surveyed perimeter. All sample geofences are visibly marked and blocked in production until replaced. Set `PRESENCE_RETENTION_DAYS` and `LOCATION_ACCURACY_LIMIT_M` to university-approved values. Student location checks require GPS permission and the page open; this web app does not run background tracking when the browser is closed.
 
-The map uses Google Maps when `GOOGLE_MAPS_API_KEY` is set in the local `.env` or Vercel environment; otherwise it uses OpenStreetMap. `run.ps1` reads `.env`, and Compose passes the same setting through. The Google key is necessarily visible to browser users, so restrict it in Google Cloud to the Maps JavaScript API and allowed website referrers. Add `http://127.0.0.1:8000/*` for local testing, then the real HTTPS hostname for a deployment. Google Maps requires the Maps JavaScript API enabled and an eligible billing setup.
+The map uses Google Maps when `GOOGLE_MAPS_API_KEY` is set in the local `.env` or Railway service variables; otherwise it uses OpenStreetMap. `run.ps1` reads `.env`, and Compose passes the same setting through. The Google key is necessarily visible to browser users, so restrict it in Google Cloud to the Maps JavaScript API and allowed website referrers. Add `http://127.0.0.1:8000/*` for local testing, then the real HTTPS hostname for a deployment. Google Maps requires the Maps JavaScript API enabled and an eligible billing setup.
 
 The OpenStreetMap fallback requires internet access in the browser, shows visible attribution, and does not prefetch tiles. The public OSM tile service is best-effort and has no availability guarantee; use an institution-approved tile provider or self-hosted tile service for a public launch or high traffic.
 
