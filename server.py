@@ -770,6 +770,8 @@ def dashboard(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_d
     purge_expired_presence(db)
     config = db.get(CampusConfig, 1)
     today = utcnow().date()
+    today_start = datetime.combine(today, datetime.min.time())
+    tomorrow_start = today_start + timedelta(days=1)
     if auth.user.role == "student":
         active = db.scalar(select(PresenceSession).where(PresenceSession.student_id == auth.user.id,
                                                          PresenceSession.status == "active"))
@@ -782,7 +784,8 @@ def dashboard(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_d
                 "last_seen_at": iso(active.last_seen_at) if active else None,
                 "events_today": db.scalar(select(func.count(PresenceEvent.id)).where(
                     PresenceEvent.student_id == auth.user.id,
-                    func.date(PresenceEvent.created_at) == today.isoformat())) or 0,
+                    PresenceEvent.created_at >= today_start,
+                    PresenceEvent.created_at < tomorrow_start)) or 0,
                 "latest_event": event_payload(db, latest) if latest else None,
                 "consent": consent_payload(consent)}
     active_sessions = db.scalars(select(PresenceSession).where(PresenceSession.status == "active")).all()
@@ -790,7 +793,8 @@ def dashboard(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_d
     for event_type in counts:
         counts[event_type] = db.scalar(select(func.count(PresenceEvent.id)).where(
             PresenceEvent.event_type == event_type,
-            func.date(PresenceEvent.created_at) == today.isoformat())) or 0
+            PresenceEvent.created_at >= today_start,
+            PresenceEvent.created_at < tomorrow_start)) or 0
     zones = db.scalars(select(Geofence).order_by(Geofence.zone_type, Geofence.name)).all()
     occupancy = []
     for zone in zones:
